@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include "PROVESFlightControllerReference/Components/PowerMonitor/PowerIntegrator.hpp"
 
 using Components::PowerIntegrator;
@@ -124,4 +126,34 @@ TEST(PowerIntegratorTest, LongDurationAccumulationKeepsPrecision) {
     EXPECT_NEAR(integrator.getConsumption_mWh(), expected_mWh(consumedW, ticks), expected_mWh(consumedW, ticks) * 1e-6);
     EXPECT_NEAR(integrator.getGeneration_mWh(), expected_mWh(generatedW, ticks),
                 expected_mWh(generatedW, ticks) * 1e-6);
+}
+
+// A range check alone does not reject NaN: every comparison against NaN is false, so it
+// passes the 0-1000 W guard and is added to the total, which stays NaN for the rest of
+// the mission unless the accumulator is reset by command.
+TEST(PowerIntegratorTest, NonFinitePowerSkipsOnlyThatTotal) {
+    PowerIntegrator integrator;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+
+    integrator.update(0.0, 1.0, 1.0);
+    integrator.update(1.0, nan, 1.0);  // Invalid consumption
+    integrator.update(2.0, 1.0, nan);  // Invalid generation
+
+    EXPECT_NEAR(integrator.getConsumption_mWh(), expected_mWh(1.0, 1.0), 1e-6);
+    EXPECT_NEAR(integrator.getGeneration_mWh(), expected_mWh(1.0, 1.0), 1e-6);
+}
+
+TEST(PowerIntegratorTest, NaNDoesNotPoisonTotalPermanently) {
+    PowerIntegrator integrator;
+
+    integrator.update(0.0, 2.0, 1.0);
+    integrator.update(1.0, 2.0, 1.0);
+    integrator.update(2.0, std::numeric_limits<double>::quiet_NaN(), 1.0);
+
+    // Seven further valid samples must accumulate normally
+    for (int i = 3; i < 10; i++) {
+        integrator.update(static_cast<double>(i), 2.0, 1.0);
+    }
+
+    EXPECT_NEAR(integrator.getConsumption_mWh(), expected_mWh(2.0, 8.0), 1e-6);
 }

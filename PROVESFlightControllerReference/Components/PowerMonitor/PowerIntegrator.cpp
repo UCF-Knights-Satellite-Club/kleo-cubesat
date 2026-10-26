@@ -5,6 +5,8 @@
 
 #include "PROVESFlightControllerReference/Components/PowerMonitor/PowerIntegrator.hpp"
 
+#include <cmath>
+
 namespace Components {
 
 // ----------------------------------------------------------------------
@@ -57,8 +59,10 @@ float PowerIntegrator ::getGeneration_mWh() const {
 // ----------------------------------------------------------------------
 
 void PowerIntegrator ::accumulate(double& total_mWh, double powerW, double dt_s) {
-    // Guard against invalid power values
-    if (powerW < 0.0 || powerW > 1000.0) {  // Sanity check: power should be 0-1000W
+    // Guard against invalid power values. NaN must be rejected explicitly: every
+    // comparison against NaN is false, so a range check alone lets it through and it
+    // poisons the accumulator permanently.
+    if (!std::isfinite(powerW) || powerW < 0.0 || powerW > 1000.0) {  // Sanity check: power should be 0-1000W
         return;
     }
 
